@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>AR Poster (Hybrid)</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 오버레이 (WebXR DOM Overlay용) -->
+  <div id="overlay">
+    <!-- 로딩 화면 -->
+    <div id="loading">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <p>AR 로딩 중...</p>
+        <p class="loading-hint">카메라 권한을 허용해주세요</p>
+      </div>
+    </div>
+
+    <!-- 안내 UI -->
+    <div id="scan-guide" class="hidden">
+      <div class="guide-content">
+        <p>포스터를 카메라에 비춰주세요</p>
+        <p id="ar-mode" class="ar-mode-label"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 비디오 (공통) -->
+  <video
+    id="poster-video"
+    src="assets/video/video.mp4"
+    preload="auto"
+    loop="true"
+    crossorigin="anonymous"
+    playsinline
+    webkit-playsinline
+    muted
+    style="display: none;"
+  ></video>
+
+  <!-- AR Controller: 기기 감지 후 적절한 핸들러 로드 -->
+  <script src="js/ar-controller.js"></script>
+</body>
+</html>

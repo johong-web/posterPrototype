@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>AR 포스터 - 나라사랑카드 (Zappar)</title>
+
+  <!-- A-Frame + Zappar -->
+  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <script src="lib/zappar-aframe.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <script>
+    AFRAME.registerComponent("poster-tracker", {
+      init: function () {
+        this.el.setAttribute("visible", false);
+        this.textureApplied = false;
+
+        this.el.parentEl.addEventListener('zappar-visible', () => {
+          this.el.setAttribute("visible", true);
+
+          var videoEl = document.getElementById('poster-video');
+          if (!videoEl) return;
+
+          if (!this.textureApplied) {
+            this.textureApplied = true;
+            var plane = this.el.querySelector('a-plane');
+            if (plane) {
+              var mesh = plane.getObject3D('mesh');
+              if (mesh) {
+                var texture = new THREE.VideoTexture(videoEl);
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                mesh.material = new THREE.MeshBasicMaterial({
+                  map: texture,
+                  side: THREE.DoubleSide
+                });
+              }
+            }
+          }
+
+          videoEl.play().catch(function(){});
+        });
+
+        this.el.parentEl.addEventListener('zappar-notvisible', () => {
+          this.el.setAttribute("visible", false);
+          var videoEl = document.getElementById('poster-video');
+          if (videoEl) videoEl.pause();
+        });
+      }
+    });
+  </script>
+</head>
+<body>
+  <!-- 비디오를 a-assets 밖에 배치 (A-Frame 자동재생 방지) -->
+  <video
+    id="poster-video"
+    src="assets/video/narasarang.mp4"
+    preload="metadata"
+    crossorigin="anonymous"
+    playsinline
+    webkit-playsinline
+    muted
+    style="display:none"
+  ></video>
+
+  <!-- 로딩 화면 -->
+  <div id="loading">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p>AR 로딩 중... (Zappar)</p>
+      <p class="loading-hint">카메라 권한을 허용해주세요</p>
+    </div>
+  </div>
+
+  <!-- 안내 UI -->
+  <div id="scan-guide" class="hidden">
+    <div class="guide-content">
+      <p>포스터를 카메라에 비춰주세요</p>
+    </div>
+  </div>
+
+  <!-- 사운드 활성화 버튼 (iOS용) -->
+  <div id="unmute-overlay" class="hidden">
+    <button id="unmute-btn">🔊 소리 켜기</button>
+  </div>
+
+  <!-- AR Scene -->
+  <a-scene>
+    <a-entity zappar-permissions-ui></a-entity>
+    <a-entity zappar-compatibility-ui></a-entity>
+
+    <a-camera zappar-camera></a-camera>
+
+    <a-entity zappar-image="target: assets/marker/narasarang.zpt">
+      <a-entity poster-tracker>
+        <a-plane
+          material="shader: flat; side: double; color: black"
+          width="1.414"
+          height="2"
+          position="0 0 0"
+        ></a-plane>
+      </a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    window._audioUnlocked = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const loadingEl = document.getElementById('loading');
+      const scanGuideEl = document.getElementById('scan-guide');
+      const sceneEl = document.querySelector('a-scene');
+      const unmuteOverlay = document.getElementById('unmute-overlay');
+      const unmuteBtn = document.getElementById('unmute-btn');
+      const video = document.getElementById('poster-video');
+
+      const REDIRECT_URL = 'https://m.kebhana.com/cont/event/new/event01/1521922_152465.jsp';
+
+      function unlockAudio() {
+        if (window._audioUnlocked) return;
+        window._audioUnlocked = true;
+        if (video) video.muted = false;
+        unmuteOverlay.classList.add('hidden');
+      }
+
+      if (unmuteBtn) {
+        unmuteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          unlockAudio();
+        });
+      }
+
+      // 영상 끝나면 하나은행 링크로 이동
+      if (video) {
+        video.addEventListener('ended', () => {
+          window.location.href = REDIRECT_URL;
+        });
+      }
+
+      sceneEl.addEventListener('loaded', () => {
+        loadingEl.classList.add('hidden');
+        scanGuideEl.classList.remove('hidden');
+      });
+
+      const targetEl = document.querySelector('[zappar-image]');
+      targetEl.addEventListener('zappar-visible', () => {
+        scanGuideEl.classList.add('hidden');
+        if (!window._audioUnlocked) unmuteOverlay.classList.remove('hidden');
+      });
+
+      targetEl.addEventListener('zappar-notvisible', () => {
+        scanGuideEl.classList.remove('hidden');
+      });
+
+      document.body.addEventListener('click', () => {
+        unlockAudio();
+      }, { once: true });
+    });
+  </script>
+</body>
+</html>

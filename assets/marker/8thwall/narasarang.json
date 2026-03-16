@@ -1,0 +1,23 @@
+{
+  "imagePath": "image-targets/narasarang_luminance.png",
+  "metadata": null,
+  "name": "narasarang",
+  "type": "PLANAR",
+  "properties": {
+    "left": 0,
+    "top": 48,
+    "width": 1191,
+    "height": 1588,
+    "isRotated": false,
+    "originalWidth": 1191,
+    "originalHeight": 1684
+  },
+  "resources": {
+    "originalImage": "narasarang_original.png",
+    "croppedImage": "narasarang_cropped.png",
+    "thumbnailImage": "narasarang_thumbnail.png",
+    "luminanceImage": "narasarang_luminance.png"
+  },
+  "created": 1773377379977,
+  "updated": 1773377379977
+}

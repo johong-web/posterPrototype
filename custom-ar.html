@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>AR Poster (Custom 6-DOF)</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    #camera-feed {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: -1;
+    }
+    #ar-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      pointer-events: none;
+    }
+    #cv-canvas {
+      display: none;
+    }
+    #debug-info {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      color: lime;
+      font-size: 10px;
+      font-family: monospace;
+      z-index: 2000;
+      background: rgba(0,0,0,0.7);
+      padding: 6px 10px;
+      border-radius: 4px;
+      pointer-events: none;
+      white-space: pre;
+      max-width: 90vw;
+      line-height: 1.3;
+    }
+  </style>
+</head>
+<body>
+  <!-- 로딩 화면 -->
+  <div id="loading">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p id="loading-text">AR 로딩 중...</p>
+      <p class="loading-hint" id="loading-hint">OpenCV.js 로드 중 (~7MB)</p>
+    </div>
+  </div>
+
+  <!-- 안내 UI -->
+  <div id="scan-guide" class="hidden">
+    <div class="guide-content">
+      <p>포스터를 카메라에 비춰주세요</p>
+    </div>
+  </div>
+
+  <!-- 카메라 피드 (배경) -->
+  <video id="camera-feed" autoplay playsinline muted></video>
+
+  <!-- AR 오버레이 캔버스 -->
+  <canvas id="ar-canvas"></canvas>
+
+  <!-- OpenCV 처리용 숨김 캔버스 -->
+  <canvas id="cv-canvas"></canvas>
+
+  <!-- 오버레이 비디오 (숨김) -->
+  <video id="poster-video" src="assets/video/video.mp4" preload="auto" loop crossorigin="anonymous" playsinline webkit-playsinline muted style="display:none;"></video>
+
+  <!-- 디버그 정보 -->
+  <div id="debug-info"></div>
+
+  <!-- App Scripts -->
+  <script src="js/pose-smoother.js"></script>
+  <script src="js/cv-tracker.js"></script>
+  <script src="js/custom-ar.js"></script>
+
+  <!-- OpenCV.js WASM (마지막, async) -->
+  <script async src="https://docs.opencv.org/4.9.0/opencv.js" onload="onOpenCvReady()" type="text/javascript"></script>
+</body>
+</html>

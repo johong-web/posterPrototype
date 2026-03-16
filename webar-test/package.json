@@ -1,0 +1,20 @@
+{
+  "name": "webar-test",
+  "version": "0.1.0",
+  "description": "Open WebAR starter for image mode.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@web-ar-studio/webar-engine-sdk": "^1.0.20",
+    "normalize.css": "^8.0.1",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.1.4",
+    "vite": "^5.0.0"
+  }
+}

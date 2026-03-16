@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>AR Poster</title>
+
+  <!-- A-Frame + Zappar (공식 호환 버전) -->
+  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <script src="lib/zappar-aframe.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <script>
+    // 타겟 인식 시 콘텐츠 표시/숨김 + 비디오 제어
+    AFRAME.registerComponent("poster-tracker", {
+      init: function () {
+        const videoEl = document.getElementById('poster-video');
+        this.el.setAttribute("visible", false);
+
+        this.el.sceneEl.addEventListener('zappar-visible', () => {
+          this.el.setAttribute("visible", true);
+          if (videoEl) {
+            videoEl.play().catch(err => console.log('Autoplay blocked:', err));
+          }
+        });
+
+        this.el.sceneEl.addEventListener('zappar-notvisible', () => {
+          this.el.setAttribute("visible", false);
+          if (videoEl) {
+            videoEl.pause();
+          }
+        });
+      }
+    });
+  </script>
+</head>
+<body>
+  <!-- 로딩 화면 -->
+  <div id="loading">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p>AR 로딩 중...</p>
+      <p class="loading-hint">카메라 권한을 허용해주세요</p>
+    </div>
+  </div>
+
+  <!-- 안내 UI -->
+  <div id="scan-guide" class="hidden">
+    <div class="guide-content">
+      <p>포스터를 카메라에 비춰주세요</p>
+    </div>
+  </div>
+
+  <!-- AR Scene -->
+  <a-scene>
+    <!-- Zappar 권한 및 호환성 UI -->
+    <a-entity zappar-permissions-ui></a-entity>
+    <a-entity zappar-compatibility-ui></a-entity>
+
+    <a-assets>
+      <video
+        id="poster-video"
+        src="assets/video/video.mp4"
+        preload="auto"
+        loop="true"
+        crossorigin="anonymous"
+        playsinline
+        webkit-playsinline
+        muted
+      ></video>
+    </a-assets>
+
+    <!-- Zappar 카메라 (공식 예제와 동일) -->
+    <a-camera zappar-camera></a-camera>
+
+    <!-- 이미지 타겟 (포스터) -->
+    <a-entity zappar-image="target: assets/marker/poster-target.zpt">
+      <!--
+        poster-tracker: 타겟 인식 시 visible 제어 + 비디오 재생
+        Zappar 좌표계: Y=+1 상단, Y=-1 하단
+        포스터 비율: 1208 x 1702, 너비 = 2 * (1208/1702) = 1.42
+      -->
+      <a-entity poster-tracker>
+        <a-plane
+          material="src: #poster-video; shader: flat; side: double"
+          width="1.42"
+          height="2"
+          position="0 0 0"
+        ></a-plane>
+      </a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

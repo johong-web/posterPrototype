@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>MindAR Marker Compiler</title>
+  <script type="importmap">
+    { "imports": { "mind-ar/image": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js" } }
+  </script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+    h1 { font-size: 20px; }
+    .drop-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 8px; }
+    .drop-zone.active { border-color: #007aff; background: #f0f7ff; }
+    #preview { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+    #preview img { width: 120px; height: auto; border: 1px solid #ddd; border-radius: 4px; }
+    button { background: #007aff; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; }
+    button:disabled { background: #ccc; }
+    #status { margin: 20px 0; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <h1>MindAR Multi-Target Compiler</h1>
+  <p>포스터 이미지를 순서대로 추가하세요 (targetIndex 0, 1, ...)</p>
+
+  <div class="drop-zone" id="dropZone">
+    이미지 파일을 여기에 드래그하거나 클릭하세요
+    <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+  </div>
+
+  <div id="preview"></div>
+
+  <button id="compileBtn" disabled>컴파일 시작</button>
+  <div id="status"></div>
+
+  <script type="module">
+    import { Compiler } from 'mind-ar/image';
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const compileBtn = document.getElementById('compileBtn');
+    const statusEl = document.getElementById('status');
+
+    let imageFiles = [];
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('active');
+      addFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => addFiles(e.target.files));
+
+    function addFiles(files) {
+      for (const f of files) {
+        if (f.type.startsWith('image/')) {
+          imageFiles.push(f);
+          const img = document.createElement('img');
+          img.src = URL.createObjectURL(f);
+          const label = document.createElement('div');
+          label.style.textAlign = 'center';
+          label.style.fontSize = '12px';
+          label.textContent = `#${imageFiles.length - 1}: ${f.name}`;
+          const wrap = document.createElement('div');
+          wrap.appendChild(img);
+          wrap.appendChild(label);
+          preview.appendChild(wrap);
+        }
+      }
+      compileBtn.disabled = imageFiles.length === 0;
+    }
+
+    compileBtn.addEventListener('click', async () => {
+      compileBtn.disabled = true;
+      statusEl.textContent = '컴파일 준비 중...';
+
+      try {
+        const compiler = new Compiler();
+
+        const images = await Promise.all(imageFiles.map(f => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.src = URL.createObjectURL(f);
+          });
+        }));
+
+        statusEl.textContent = `${images.length}개 이미지 컴파일 중...\n이미지가 많을수록 오래 걸립니다.`;
+
+        await compiler.compileImageTargets(images, (progress) => {
+          statusEl.textContent = `컴파일 중... ${Math.round(progress)}%`;
+        });
+
+        const exportedBuffer = await compiler.exportData();
+
+        const blob = new Blob([exportedBuffer]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'targets.mind';
+        a.click();
+
+        statusEl.textContent = `완료! targets.mind 다운로드됨 (${(blob.size / 1024).toFixed(0)}KB)\n\n` +
+          `이 파일을 assets/marker/targets.mind에 덮어쓰세요.\n\n` +
+          `Target indices:\n` +
+          imageFiles.map((f, i) => `  #${i}: ${f.name}`).join('\n');
+
+      } catch (err) {
+        statusEl.textContent = '에러: ' + err.message;
+        console.error(err);
+      }
+      compileBtn.disabled = false;
+    });
+  </script>
+</body>
+</html>

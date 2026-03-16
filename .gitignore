@@ -1,0 +1,12 @@
+node_modules/
+.claude/
+.serena/
+
+# 대용량 비디오 파일 제외 (GitHub 100MB 제한)
+assets/video/Adobe Express*
+assets/video/인천병무청*
+assets/video/입영버스*
+assets/video/video.mp4
+assets/video/video2.mp4
+assets/video/녹화*
+assets/video/KakaoTalk*

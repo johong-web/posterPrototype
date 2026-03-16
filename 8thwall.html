@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>AR 포스터 - 나라사랑카드 (8th Wall)</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    #camera-video {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 0;
+    }
+    #camerafeed {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+      z-index: -1;
+    }
+    #ar-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      pointer-events: none;
+    }
+    #debug-log {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0,0,0,0.85);
+      color: #0f0;
+      font-size: 11px;
+      padding: 8px;
+      z-index: 99999;
+      max-height: 30vh;
+      overflow-y: auto;
+      font-family: monospace;
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+  <video id="camera-video" autoplay playsinline muted></video>
+  <canvas id="camerafeed"></canvas>
+  <canvas id="ar-canvas"></canvas>
+
+  <div id="loading">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p>AR 로딩 중...</p>
+      <p class="loading-hint">카메라 권한을 허용해주세요</p>
+    </div>
+  </div>
+
+  <div id="scan-guide" class="hidden">
+    <div class="guide-content">
+      <p>포스터를 카메라에 비춰주세요</p>
+    </div>
+  </div>
+
+  <div id="unmute-overlay" class="hidden">
+    <button id="unmute-btn">🔊 소리 켜기</button>
+  </div>
+
+  <div id="debug-log"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.137.0/build/three.min.js"></script>
+  <script src="lib/xr.js" data-preload-chunks="slam"></script>
+
+  <script>
+    const REDIRECT_URL = 'https://m.kebhana.com/cont/event/new/event01/1521922_152465.jsp';
+
+    function dbg(msg) {
+      console.log('[8W] ' + msg);
+      const el = document.getElementById('debug-log');
+      if (el) {
+        el.innerHTML += msg + '<br>';
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+
+    dbg('v11 loaded');
+
+    class PoseSmoother {
+      constructor(alpha = 0.3) {
+        this.alpha = alpha;
+        this.pos = null;
+        this.quat = null;
+        this.scl = null;
+      }
+      update(position, quaternion, scale) {
+        // detail.position/rotation은 일반 객체일 수 있으므로 Three.js 객체로 변환
+        const p = (position instanceof THREE.Vector3) ? position : new THREE.Vector3(position.x, position.y, position.z);
+        const q = (quaternion instanceof THREE.Quaternion) ? quaternion : new THREE.Quaternion(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+        if (!this.pos) {
+          this.pos = p.clone();
+          this.quat = q.clone();
+          this.scl = scale;
+          return;
+        }
+        this.pos.lerp(p, this.alpha);
+        this.quat.slerp(q, this.alpha);
+        this.scl += (scale - this.scl) * this.alpha;
+      }
+      apply(mesh) {
+        if (!this.pos) return;
+        mesh.position.copy(this.pos);
+        mesh.quaternion.copy(this.quat);
+        mesh.scale.set(this.scl, this.scl, this.scl);
+      }
+    }
+
+    const smoother = new PoseSmoother(0.6);  // 더 빠른 반응 (0.25→0.6)
+
+    const imageTargetData = [
+      {
+        name: 'narasarang',
+        type: 'PLANAR',
+        metadata: null,
+        moveable: false,
+        physicalWidthInMeters: null,
+        properties: {
+          left: 0, top: 48,
+          width: 1191, height: 1588,
+          isRotated: false,
+          originalWidth: 1191, originalHeight: 1684,
+        },
+        imagePath: 'assets/marker/8thwall/image-targets/narasarang_luminance.png',
+      }
+    ];
+
+    let videoEl = null;
+    let videoPlane = null;
+    let audioUnlocked = false;
+    let isTracking = false;
+
+    // 별도 Three.js (alpha:true)
+    let arRenderer, arScene, arCamera;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+      if (videoEl) videoEl.muted = false;
+      document.getElementById('unmute-overlay').classList.add('hidden');
+    }
+
+    document.getElementById('unmute-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      unlockAudio();
+    });
+
+    document.body.addEventListener('click', () => { unlockAudio(); }, {once: true});
+
+    function initOverlayRenderer() {
+      const c = document.getElementById('ar-canvas');
+      arRenderer = new THREE.WebGLRenderer({canvas: c, alpha: true, antialias: true});
+      arRenderer.setSize(window.innerWidth, window.innerHeight);
+      arRenderer.setPixelRatio(window.devicePixelRatio || 1);
+      arRenderer.setClearColor(0x000000, 0);
+
+      arScene = new THREE.Scene();
+      arCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 1000);
+      arScene.add(arCamera);
+      dbg('Overlay renderer ready');
+    }
+
+    async function startHighResCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: {ideal: 1920}, height: {ideal: 1080} },
+          audio: false,
+        });
+        const v = document.getElementById('camera-video');
+        v.srcObject = stream;
+        await v.play();
+        dbg('Hi-res: ' + v.videoWidth + 'x' + v.videoHeight);
+      } catch (e) {
+        dbg('Camera err: ' + e.message);
+      }
+    }
+
+    function startAR() {
+      dbg('startAR');
+      if (!window.XR8 || !XR8.XrController) {
+        setTimeout(startAR, 200);
+        return;
+      }
+      dbg('XR8 ready');
+
+      try {
+        const canvas = document.getElementById('camerafeed');
+        canvas.width = 320;
+        canvas.height = 240;
+
+        XR8.addCameraPipelineModules([
+          XR8.GlTextureRenderer.pipelineModule(),
+          XR8.Threejs.pipelineModule(),
+          XR8.XrController.pipelineModule(),
+          {
+            name: 'poster-ar',
+            onStart: () => {
+              dbg('Pipeline started');
+
+              const {camera} = XR8.Threejs.xrScene();
+              dbg('8W fov=' + camera.fov);
+
+              // AR 비디오
+              videoEl = document.createElement('video');
+              videoEl.src = 'assets/video/narasarang.mp4';
+              videoEl.playsInline = true;
+              videoEl.setAttribute('playsinline', '');
+              videoEl.crossOrigin = 'anonymous';
+              videoEl.muted = true;
+              videoEl.loop = false;
+              videoEl.preload = 'auto';
+              videoEl.style.display = 'none';
+              document.body.appendChild(videoEl);
+
+              videoEl.addEventListener('ended', () => {
+                window.location.href = REDIRECT_URL;
+              });
+
+              const texture = new THREE.VideoTexture(videoEl);
+              texture.minFilter = THREE.LinearFilter;
+              texture.magFilter = THREE.LinearFilter;
+
+              // 8th Wall crop/scale 정보 (from imageTargetData properties)
+              const cropLeft = 0;
+              const cropTop = 48;
+              const cropW = 1191;
+              const cropH = 1588;
+              const origW = 1191;
+              const origH = 1684;
+
+              // 8th Wall은 crop 영역 기준: scaledWidth = cropW/cropH, scaledHeight = 1.0
+              // detail.position = crop 영역 중심
+              // detail.scale * scaledWidth = crop 너비 (scene 단위)
+              // detail.scale * scaledHeight = crop 높이 (scene 단위)
+              const cropScaledW = cropW / cropH;  // 0.75
+              const cropScaledH = 1.0;
+
+              // 원본 전체를 덮는 plane 크기 (crop 기준 비율로 변환)
+              const fullW = (origW / cropW) * cropScaledW;  // origW == cropW이므로 0.75
+              const fullH = (origH / cropH) * cropScaledH;  // 1684/1588 = 1.0604
+
+              // crop 중심 대비 원본 중심의 Y 오프셋 (scene 단위)
+              // crop 중심 Y (from top) = cropTop + cropH/2 = 48 + 794 = 842
+              // 원본 중심 Y (from top) = origH/2 = 842
+              // 오프셋 = (842 - 842) / cropH * cropScaledH = 0
+              // → Y 오프셋 없음 (crop이 거의 중앙 대칭)
+              const offsetY = ((cropTop + cropH / 2) - origH / 2) / cropH * cropScaledH;
+
+              const geo = new THREE.PlaneGeometry(fullW, fullH);
+              const mat = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide,
+              });
+              videoPlane = new THREE.Mesh(geo, mat);
+              // crop 중심 → 원본 중심으로 Y 보정 (로컬 좌표)
+              // 8th Wall Y축은 위가 + 이므로, 이미지 좌표계에서 아래로 밀어야 하면 -Y
+              videoPlane.userData.localOffsetY = -offsetY;
+              videoPlane.visible = false;
+              arScene.add(videoPlane);
+
+              dbg('Plane ' + fullW.toFixed(4) + 'x' + fullH.toFixed(4) + ' offsetY=' + offsetY.toFixed(4));
+            },
+            onUpdate: () => {
+              // 스무딩 적용
+              if (isTracking && videoPlane) {
+                smoother.apply(videoPlane);
+              }
+
+              // 8th Wall 카메라 행렬 저장 (렌더링은 별도 rAF에서)
+              const {camera} = XR8.Threejs.xrScene();
+              arCamera.projectionMatrix.copy(camera.projectionMatrix);
+              if (camera.projectionMatrixInverse) {
+                arCamera.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+              }
+              arCamera.position.copy(camera.position);
+              arCamera.quaternion.copy(camera.quaternion);
+            },
+            listeners: [
+              {
+                event: 'reality.imagefound',
+                process: ({detail}) => {
+                  dbg('FOUND: ' + detail.name +
+                    ' pos=' + detail.position.x.toFixed(3) + ',' +
+                    detail.position.y.toFixed(3) + ',' +
+                    detail.position.z.toFixed(3) +
+                    ' scl=' + detail.scale.toFixed(4) +
+                    ' sw=' + (detail.scaledWidth || '?') +
+                    ' sh=' + (detail.scaledHeight || '?'));
+                  if (detail.name !== 'narasarang') return;
+                  isTracking = true;
+                  smoother.update(detail.position, detail.rotation, detail.scale);
+                  if (videoPlane) {
+                    smoother.apply(videoPlane);
+                    videoPlane.visible = true;
+                  }
+                  document.getElementById('scan-guide').classList.add('hidden');
+                  if (videoEl) {
+                    if (!audioUnlocked) document.getElementById('unmute-overlay').classList.remove('hidden');
+                    videoEl.play().catch(() => {});
+                  }
+                },
+              },
+              {
+                event: 'reality.imageupdated',
+                process: ({detail}) => {
+                  if (detail.name !== 'narasarang') return;
+                  smoother.update(detail.position, detail.rotation, detail.scale);
+                },
+              },
+              {
+                event: 'reality.imagelost',
+                process: ({detail}) => {
+                  dbg('LOST: ' + detail.name);
+                  if (detail.name !== 'narasarang') return;
+                  isTracking = false;
+                  if (videoPlane) videoPlane.visible = false;
+                  if (videoEl) videoEl.pause();
+                  document.getElementById('scan-guide').classList.remove('hidden');
+                },
+              },
+            ],
+          },
+        ]);
+
+        XR8.XrController.configure({
+          imageTargetData: imageTargetData,
+          disableWorldTracking: true,
+        });
+
+        XR8.run({
+          canvas,
+          allowedDevices: XR8.XrConfig.device().ANY,
+        });
+        dbg('Running (tracking: 320x240)');
+
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('scan-guide').classList.remove('hidden');
+      } catch (e) {
+        dbg('ERROR: ' + e.message);
+      }
+    }
+
+    // 별도 렌더루프 (8th Wall 파이프라인과 독립)
+    function overlayRenderLoop() {
+      requestAnimationFrame(overlayRenderLoop);
+      if (arRenderer && arScene && arCamera) {
+        arRenderer.render(arScene, arCamera);
+      }
+    }
+
+    initOverlayRenderer();
+    overlayRenderLoop();
+    startHighResCamera().then(() => {
+      if (window.XR8) startAR();
+      else window.addEventListener('xrloaded', startAR);
+    });
+  </script>
+</body>
+</html>

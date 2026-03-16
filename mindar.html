@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <title>AR 포스터 - 나라사랑카드</title>
+
+  <!-- MindAR + A-Frame -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 로딩 화면 -->
+  <div id="loading">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p id="loading-text">AR 로딩 중...</p>
+      <p class="loading-hint">카메라 권한을 허용해주세요</p>
+    </div>
+  </div>
+
+  <!-- 안내 UI -->
+  <div id="scan-guide" class="hidden">
+    <div class="guide-content">
+      <p>포스터를 카메라에 비춰주세요</p>
+    </div>
+  </div>
+
+  <!-- 사운드 활성화 버튼 (iOS용) -->
+  <div id="unmute-overlay" class="hidden">
+    <button id="unmute-btn">🔊 소리 켜기</button>
+  </div>
+
+  <!-- AR Scene: 단일 타겟 -->
+  <a-scene
+    mindar-image="imageTargetSrc: assets/marker/narasarang.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.00005; filterBeta: 0.05; missTolerance: 10; warmupTolerance: 8; maxTrack: 1;"
+    color-space="sRGB"
+    renderer="colorManagement: true; physicallyCorrectLights: true;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+  >
+    <a-assets>
+      <video
+        id="poster-video"
+        src="assets/video/narasarang.mp4"
+        preload="auto"
+        crossorigin="anonymous"
+        playsinline
+        webkit-playsinline
+      ></video>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity mindar-image-target="targetIndex: 0">
+      <a-video
+        src="#poster-video"
+        position="0 0 0"
+        width="1"
+        height="1.414"
+        rotation="0 0 0"
+      ></a-video>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const loadingEl = document.getElementById('loading');
+      const scanGuideEl = document.getElementById('scan-guide');
+      const sceneEl = document.querySelector('a-scene');
+      const unmuteOverlay = document.getElementById('unmute-overlay');
+      const unmuteBtn = document.getElementById('unmute-btn');
+      const video = document.getElementById('poster-video');
+
+      let audioUnlocked = false;
+      let isTracking = false;
+
+      const REDIRECT_URL = 'https://m.kebhana.com/cont/event/new/event01/1521922_152465.jsp';
+
+      function unlockAudio() {
+        if (audioUnlocked) return;
+        audioUnlocked = true;
+        if (video) video.muted = false;
+        unmuteOverlay.classList.add('hidden');
+      }
+
+      if (unmuteBtn) {
+        unmuteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          unlockAudio();
+          if (video && video.paused) video.play().catch(() => {});
+        });
+      }
+
+      document.body.addEventListener('click', () => {
+        unlockAudio();
+        if (video && video.paused && isTracking) video.play().catch(() => {});
+      }, { once: true });
+
+      // 영상 끝나면 하나은행 링크로 이동
+      if (video) {
+        video.addEventListener('ended', () => {
+          window.location.href = REDIRECT_URL;
+        });
+      }
+
+      // AR 준비 완료
+      sceneEl.addEventListener('arReady', () => {
+        loadingEl.classList.add('hidden');
+        scanGuideEl.classList.remove('hidden');
+      });
+
+      sceneEl.addEventListener('arError', () => {
+        loadingEl.querySelector('p').textContent = '카메라를 사용할 수 없습니다';
+        loadingEl.querySelector('.loading-hint').textContent = '카메라 권한을 확인해주세요';
+        loadingEl.querySelector('.spinner').style.display = 'none';
+      });
+
+      // 타겟 이벤트
+      const targetEl = document.querySelector('[mindar-image-target]');
+
+      targetEl.addEventListener('targetFound', () => {
+        isTracking = true;
+        scanGuideEl.classList.add('hidden');
+
+        if (video) {
+          if (!audioUnlocked) {
+            video.muted = true;
+            unmuteOverlay.classList.remove('hidden');
+          }
+          video.play().catch(() => {});
+        }
+      });
+
+      targetEl.addEventListener('targetLost', () => {
+        isTracking = false;
+        if (video) video.pause();
+        scanGuideEl.classList.remove('hidden');
+      });
+    });
+  </script>
+</body>
+</html>
