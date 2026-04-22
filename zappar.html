@@ -32,9 +32,33 @@
                 var texture = new THREE.VideoTexture(videoEl);
                 texture.minFilter = THREE.LinearFilter;
                 texture.magFilter = THREE.LinearFilter;
-                mesh.material = new THREE.MeshBasicMaterial({
-                  map: texture,
-                  side: THREE.DoubleSide
+                mesh.material = new THREE.ShaderMaterial({
+                  uniforms: {
+                    map: { value: texture },
+                    radius: { value: 0.06 } // 둥근 정도 (0.0 ~ 0.5)
+                  },
+                  vertexShader: [
+                    'varying vec2 vUv;',
+                    'void main() {',
+                    '  vUv = uv;',
+                    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+                    '}'
+                  ].join('\n'),
+                  fragmentShader: [
+                    'uniform sampler2D map;',
+                    'uniform float radius;',
+                    'varying vec2 vUv;',
+                    'void main() {',
+                    '  vec2 uv = vUv;',
+                    '  vec2 p = abs(uv - 0.5) * 2.0;', // -1~1 범위로 변환
+                    '  vec2 corner = max(p - (1.0 - radius * 2.0), 0.0);',
+                    '  float d = length(corner) / (radius * 2.0);',
+                    '  if (d > 1.0) discard;',
+                    '  gl_FragColor = texture2D(map, uv);',
+                    '}'
+                  ].join('\n'),
+                  side: THREE.DoubleSide,
+                  transparent: true
                 });
               }
             }
@@ -56,12 +80,13 @@
   <!-- 비디오를 a-assets 밖에 배치 (A-Frame 자동재생 방지) -->
   <video
     id="poster-video"
-    src="assets/video/narasarang.mp4"
+    src="assets/video/jo-hong.mp4"
     preload="metadata"
     crossorigin="anonymous"
     playsinline
     webkit-playsinline
     muted
+    loop
     style="display:none"
   ></video>
 
@@ -93,11 +118,11 @@
 
     <a-camera zappar-camera></a-camera>
 
-    <a-entity zappar-image="target: assets/marker/narasarang.zpt">
+    <a-entity zappar-image="target: assets/marker/jo-hong.zpt">
       <a-entity poster-tracker>
         <a-plane
           material="shader: flat; side: double; color: black"
-          width="1.414"
+          width="1.262"
           height="2"
           position="0 0 0"
         ></a-plane>
@@ -116,8 +141,6 @@
       const unmuteBtn = document.getElementById('unmute-btn');
       const video = document.getElementById('poster-video');
 
-      const REDIRECT_URL = 'https://m.kebhana.com/cont/event/new/event01/1521922_152465.jsp';
-
       function unlockAudio() {
         if (window._audioUnlocked) return;
         window._audioUnlocked = true;
@@ -132,10 +155,11 @@
         });
       }
 
-      // 영상 끝나면 하나은행 링크로 이동
+      // 반복 재생 (loop 속성 + 안전 장치)
       if (video) {
         video.addEventListener('ended', () => {
-          window.location.href = REDIRECT_URL;
+          video.currentTime = 0;
+          video.play().catch(function(){});
         });
       }
 
