@@ -163,6 +163,27 @@
         });
       }
 
+      // 카메라 권한을 명시적으로 먼저 요청 (Zappar 로딩 전에 프롬프트 보장)
+      async function requestCameraPermission() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false,
+          });
+          // 즉시 중지 (Zappar가 다시 잡을 수 있도록)
+          stream.getTracks().forEach((t) => t.stop());
+          return true;
+        } catch (e) {
+          const hintEl = loadingEl.querySelector('.loading-hint');
+          if (hintEl) {
+            hintEl.textContent = '카메라 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요. (' + (e.name || e.message) + ')';
+          }
+          return false;
+        }
+      }
+
+      requestCameraPermission();
+
       sceneEl.addEventListener('loaded', () => {
         loadingEl.classList.add('hidden');
         scanGuideEl.classList.remove('hidden');
