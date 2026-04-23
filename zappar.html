@@ -111,24 +111,26 @@
     <button id="unmute-btn">🔊 소리 켜기</button>
   </div>
 
-  <!-- AR Scene -->
-  <a-scene>
-    <a-entity zappar-permissions-ui></a-entity>
-    <a-entity zappar-compatibility-ui></a-entity>
+  <!-- AR Scene (사용자 제스처 후에 DOM에 삽입) -->
+  <template id="scene-template">
+    <a-scene>
+      <a-entity zappar-permissions-ui></a-entity>
+      <a-entity zappar-compatibility-ui></a-entity>
 
-    <a-camera zappar-camera></a-camera>
+      <a-camera zappar-camera></a-camera>
 
-    <a-entity zappar-image="target: assets/marker/jo-hong.zpt">
-      <a-entity poster-tracker>
-        <a-plane
-          material="shader: flat; side: double; color: black"
-          width="1.262"
-          height="2"
-          position="0 0 0"
-        ></a-plane>
+      <a-entity zappar-image="target: assets/marker/jo-hong.zpt">
+        <a-entity poster-tracker>
+          <a-plane
+            material="shader: flat; side: double; color: black"
+            width="1.262"
+            height="2"
+            position="0 0 0"
+          ></a-plane>
+        </a-entity>
       </a-entity>
-    </a-entity>
-  </a-scene>
+    </a-scene>
+  </template>
 
   <script>
     window._audioUnlocked = false;
@@ -136,10 +138,16 @@
     document.addEventListener('DOMContentLoaded', () => {
       const loadingEl = document.getElementById('loading');
       const scanGuideEl = document.getElementById('scan-guide');
-      const sceneEl = document.querySelector('a-scene');
+      const sceneTemplate = document.getElementById('scene-template');
       const unmuteOverlay = document.getElementById('unmute-overlay');
       const unmuteBtn = document.getElementById('unmute-btn');
       const video = document.getElementById('poster-video');
+      const hintEl = loadingEl.querySelector('.loading-hint');
+
+      function setHint(msg) {
+        if (hintEl) hintEl.textContent = msg;
+        console.log('[zappar]', msg);
+      }
 
       function unlockAudio() {
         if (window._audioUnlocked) return;
@@ -155,7 +163,6 @@
         });
       }
 
-      // 반복 재생 (loop 속성 + 안전 장치)
       if (video) {
         video.addEventListener('ended', () => {
           video.currentTime = 0;
@@ -163,97 +170,68 @@
         });
       }
 
-      // ===== 카메라 권한 디버그 =====
-      const hintEl = loadingEl.querySelector('.loading-hint');
-      function showDebug(msg) {
-        if (hintEl) hintEl.textContent = msg;
-        console.log('[debug]', msg);
-      }
+      // ===== 시작 버튼: 사용자 제스처로 카메라 권한 확보 후 Zappar scene 삽입 =====
+      const startBtn = document.createElement('button');
+      startBtn.textContent = '▶ AR 시작하기';
+      startBtn.style.cssText =
+        'margin-top:20px;padding:14px 28px;font-size:18px;background:#4caf50;' +
+        'color:#fff;border:none;border-radius:8px;cursor:pointer;';
+      loadingEl.querySelector('.loading-content').appendChild(startBtn);
+      setHint('시작 버튼을 눌러주세요');
 
-      // 환경 확인
-      const isSecure = window.isSecureContext;
-      const hasMD = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-      const ua = navigator.userAgent;
-      showDebug(`secure=${isSecure} mediaDevices=${hasMD}`);
+      async function boot() {
+        startBtn.disabled = true;
+        setHint('카메라 권한 요청 중...');
 
-      if (!isSecure) {
-        showDebug('HTTPS가 아니라 카메라 사용 불가. URL에 https:// 확인하세요.');
-      } else if (!hasMD) {
-        showDebug('이 브라우저는 카메라 API 미지원. Chrome 최신 버전으로 열어주세요.');
-      } else {
-        // 사용자 터치 직후에 요청해야 일부 브라우저가 팝업을 띄움
-        const triggerBtn = document.createElement('button');
-        triggerBtn.textContent = '카메라 시작하기';
-        triggerBtn.style.cssText = 'margin-top:20px;padding:12px 24px;font-size:16px;background:#4caf50;color:#fff;border:none;border-radius:8px;';
-        loadingEl.querySelector('.loading-content').appendChild(triggerBtn);
-
-        // 여러 카메라 옵션을 순차적으로 시도 (NotReadableError 회피)
-        async function tryOpen(constraints, label) {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            stream.getTracks().forEach((t) => t.stop());
-            return { ok: true, label };
-          } catch (e) {
-            return { ok: false, label, err: e };
-          }
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+            audio: false,
+          });
+        } catch (e) {
+          setHint('카메라 실패: ' + (e && e.name) + ' / ' + (e && e.message));
+          startBtn.disabled = false;
+          startBtn.textContent = '다시 시도';
+          return;
         }
 
-        triggerBtn.addEventListener('click', async () => {
-          triggerBtn.disabled = true;
-          showDebug('카메라 권한 요청 중...');
+        // Zappar가 자체 카메라 스트림을 다시 열 것이므로 여기선 닫아준다.
+        // 권한은 이미 승인된 상태라 재요청은 프롬프트 없이 즉시 성공.
+        stream.getTracks().forEach((t) => t.stop());
 
-          const attempts = [
-            [{ video: { facingMode: { exact: 'environment' } }, audio: false }, 'env-exact'],
-            [{ video: { facingMode: 'environment' }, audio: false }, 'env-ideal'],
-            [{ video: { facingMode: 'user' }, audio: false }, 'user'],
-            [{ video: true, audio: false }, 'any'],
-          ];
+        setHint('AR 엔진 초기화 중...');
+        startBtn.remove();
 
-          let lastErr = null;
-          for (const [c, label] of attempts) {
-            const r = await tryOpen(c, label);
-            if (r.ok) {
-              showDebug('카메라 OK (' + label + '). AR 초기화 중...');
-              triggerBtn.remove();
-              return;
-            }
-            lastErr = r.err;
-            console.log('[cam try]', label, r.err && r.err.name, r.err && r.err.message);
+        // template 안의 <a-scene>을 DOM에 삽입 (이 시점에 A-Frame이 인식하고 부팅)
+        const sceneFragment = sceneTemplate.content.cloneNode(true);
+        document.body.appendChild(sceneFragment);
+        sceneTemplate.remove();
+
+        const sceneEl = document.querySelector('a-scene');
+        sceneEl.addEventListener('loaded', () => {
+          loadingEl.classList.add('hidden');
+          scanGuideEl.classList.remove('hidden');
+        });
+
+        // 15초 이상 loaded 이벤트가 안 오면 안내
+        setTimeout(() => {
+          if (!loadingEl.classList.contains('hidden')) {
+            setHint('초기화가 오래 걸립니다. 페이지를 새로고침해보세요.');
           }
+        }, 15000);
 
-          // 모두 실패 — 장치 열거 시도
-          let devList = '';
-          try {
-            const devs = await navigator.mediaDevices.enumerateDevices();
-            devList = devs.filter((d) => d.kind === 'videoinput')
-              .map((d) => d.label || 'unnamed').join(', ') || '(없음)';
-          } catch {}
-
-          showDebug(
-            '모든 카메라 시도 실패: ' +
-            (lastErr && lastErr.name) + ' / ' + (lastErr && lastErr.message) +
-            ' / devices=[' + devList + ']' +
-            ' / UA=' + ua
-          );
-          triggerBtn.disabled = false;
-          triggerBtn.textContent = '다시 시도';
+        const targetEl = document.querySelector('[zappar-image]');
+        targetEl.addEventListener('zappar-visible', () => {
+          scanGuideEl.classList.add('hidden');
+          if (!window._audioUnlocked) unmuteOverlay.classList.remove('hidden');
+        });
+        targetEl.addEventListener('zappar-notvisible', () => {
+          scanGuideEl.classList.remove('hidden');
         });
       }
 
-      sceneEl.addEventListener('loaded', () => {
-        loadingEl.classList.add('hidden');
-        scanGuideEl.classList.remove('hidden');
-      });
-
-      const targetEl = document.querySelector('[zappar-image]');
-      targetEl.addEventListener('zappar-visible', () => {
-        scanGuideEl.classList.add('hidden');
-        if (!window._audioUnlocked) unmuteOverlay.classList.remove('hidden');
-      });
-
-      targetEl.addEventListener('zappar-notvisible', () => {
-        scanGuideEl.classList.remove('hidden');
-      });
+      startBtn.addEventListener('click', boot);
 
       document.body.addEventListener('click', () => {
         unlockAudio();
