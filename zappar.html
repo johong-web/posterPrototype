@@ -163,26 +163,48 @@
         });
       }
 
-      // 카메라 권한을 명시적으로 먼저 요청 (Zappar 로딩 전에 프롬프트 보장)
-      async function requestCameraPermission() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' },
-            audio: false,
-          });
-          // 즉시 중지 (Zappar가 다시 잡을 수 있도록)
-          stream.getTracks().forEach((t) => t.stop());
-          return true;
-        } catch (e) {
-          const hintEl = loadingEl.querySelector('.loading-hint');
-          if (hintEl) {
-            hintEl.textContent = '카메라 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요. (' + (e.name || e.message) + ')';
-          }
-          return false;
-        }
+      // ===== 카메라 권한 디버그 =====
+      const hintEl = loadingEl.querySelector('.loading-hint');
+      function showDebug(msg) {
+        if (hintEl) hintEl.textContent = msg;
+        console.log('[debug]', msg);
       }
 
-      requestCameraPermission();
+      // 환경 확인
+      const isSecure = window.isSecureContext;
+      const hasMD = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      const ua = navigator.userAgent;
+      showDebug(`secure=${isSecure} mediaDevices=${hasMD}`);
+
+      if (!isSecure) {
+        showDebug('HTTPS가 아니라 카메라 사용 불가. URL에 https:// 확인하세요.');
+      } else if (!hasMD) {
+        showDebug('이 브라우저는 카메라 API 미지원. Chrome 최신 버전으로 열어주세요.');
+      } else {
+        // 사용자 터치 직후에 요청해야 일부 브라우저가 팝업을 띄움
+        const triggerBtn = document.createElement('button');
+        triggerBtn.textContent = '카메라 시작하기';
+        triggerBtn.style.cssText = 'margin-top:20px;padding:12px 24px;font-size:16px;background:#4caf50;color:#fff;border:none;border-radius:8px;';
+        loadingEl.querySelector('.loading-content').appendChild(triggerBtn);
+
+        triggerBtn.addEventListener('click', async () => {
+          triggerBtn.disabled = true;
+          showDebug('카메라 권한 요청 중...');
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' },
+              audio: false,
+            });
+            stream.getTracks().forEach((t) => t.stop());
+            showDebug('카메라 권한 OK. AR 초기화 중...');
+            triggerBtn.remove();
+          } catch (e) {
+            showDebug('카메라 실패: ' + (e.name || '') + ' / ' + (e.message || '') + ' / UA=' + ua);
+            triggerBtn.disabled = false;
+            triggerBtn.textContent = '다시 시도';
+          }
+        });
+      }
 
       sceneEl.addEventListener('loaded', () => {
         loadingEl.classList.add('hidden');
